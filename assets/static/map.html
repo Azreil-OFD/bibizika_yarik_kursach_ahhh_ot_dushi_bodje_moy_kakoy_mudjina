@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="ru">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="https://js.pusher.com/8.2.0/pusher.min.js"></script>
+    <script src='https://api.mapbox.com/mapbox-gl-js/v3.9.4/mapbox-gl.js'></script>
+    <link href='https://api.mapbox.com/mapbox-gl-js/v3.9.4/mapbox-gl.css' rel='stylesheet' />
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+        }
+
+        #map {
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            width: 100%;
+            height: 100%;
+        }
+
+        .departament {
+            cursor: pointer;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="map"></div>
+
+
+
+
+    <script>
+        let deportamentID = 1;
+        const baseURL = "http://localhost:5001"
+
+        mapboxgl.accessToken = 'pk.eyJ1Ijoic3ZjLW9rdGEtbWFwYm94LXN0YWZmLWFjY2VzcyIsImEiOiJjbG5sMnExa3kxNTJtMmtsODJld24yNGJlIn0.RQ4CHchAYPJQZSiUJ0O3VQ';
+        const map = new mapboxgl.Map({
+            container: 'map',
+            center: [73.423043, 61.258726],
+            zoom: 12,
+            style: 'mapbox://styles/mapbox/standard',
+            hash: true,
+        });
+
+        const setMarkerColor = (marker, color) => {
+            let markerElement = marker.getElement();
+            markerElement
+                .querySelectorAll('svg g[fill="' + marker._color + '"]')[0]
+                .setAttribute("fill", color);
+            marker._color = color;
+        }
+        async function fetchAndDisplayMarkers() {
+            try {
+                // Получаем границы видимой области
+                const bounds = map.getBounds();
+                const sw = bounds.getSouthWest(); // Юго-западный угол
+                const ne = bounds.getNorthEast(); // Северо-восточный угол
+
+                // Формируем URL для запроса
+                const url = new URL(baseURL + '/api/v1/development/search/board');
+                url.searchParams.set('topLeftLon', ne.lng); // Долгота северо-восточного угла
+                url.searchParams.set('topLeftLat', ne.lat); // Широта северо-восточного угла
+                url.searchParams.set('bottomRightLon', sw.lng); // Долгота юго-западного угла
+                url.searchParams.set('bottomRightLat', sw.lat); // Широта юго-западного угла
+
+                // Выполняем запрос
+                const response = await fetch(url);
+                if (!response.ok) {
+                    throw new Error('Ошибка сети');
+                }
+                const data = await response.json();
+
+                // Очищаем предыдущие маркеры (если есть)
+                if (window.markers) {
+                    window.markers.forEach(marker => marker.remove());
+                }
+                window.markers = [];
+
+                data.forEach(item => {
+                    const { lon, lat } = item.coords;
+                    const name = item.name;
+                    const id = item.id;
+                    const el = document.createElement('div');
+                    el.className = 'marker';
+                    el.style.backgroundColor = '#8A2BE2';
+                    el.style.width = '20px';
+                    el.style.height = '20px';
+                    el.style.borderRadius = '50%';
+                    el.style.cursor = 'pointer';
+                    const marker = new mapboxgl.Marker({
+                        color: "black",
+                        className: 'departament'
+                    }).setLngLat([lon, lat])
+                        .addTo(map);
+                    const popup = new mapboxgl.Popup({ offset: 25 }).setText(name);
+                    popup.on('open', () => {
+                        deportamentID = id;
+                    });
+                    marker.setPopup(popup);
+
+                    window.markers.push(marker);
+                });
+
+
+            } catch (error) {
+                console.error('Ошибка:', error);
+            }
+        }
+        map.on('idle', () => {
+            fetchAndDisplayMarkers()
+        });
+
+
+        function getQueryParam(param) {
+            const urlParams = new URLSearchParams(window.location.search);
+            return urlParams.get(param);
+        }
+        Pusher.logToConsole = true;
+
+        var pusher = new Pusher('c944918e9a9c0f6f3553', {
+            cluster: 'eu'
+        });
+
+        var channel = null;
+
+        window.onload = function () {
+            const id = getQueryParam('id');
+            console.log(id)
+            if (id) {
+                channel = pusher.subscribe('map-' + id)
+                channel.bind('change-marker', async function (data) {
+                    console.log(data)
+                    marker.setLngLat([data.lan, data.lat])
+
+                    map.flyTo({
+                        center: [data.lan, data.lat],
+                        zoom: 15,
+                        speed: 0.1,
+
+                        duration: 2000,
+                    });
+
+                    fetchAndDisplayMarkers();
+                });
+
+
+            }
+        };
+    </script>
+</body>
+
+</html>
