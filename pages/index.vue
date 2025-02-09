@@ -65,9 +65,8 @@
         :class="isCollapsed ? 'rounded-tl-md rounded-bl-md left-2 pl-3 ' : ''">
         {{ isCollapsed ? ">" : "<" }} </button>
 
-          <!-- Обертка для карты и overlay -->
           <div class="relative h-full w-full">
-            <iframe :src="'/api/getMap?id=' + uuid" class="absolute left-0 top-0 h-full w-full rounded-md"
+            <iframe :ref="map" :src="'/api/getMap?id=' + uuid" class="absolute left-0 top-0 h-full w-full rounded-md"
               frameborder="0"></iframe>
           </div>
     </div>
@@ -79,7 +78,7 @@ const uuid: Ref<string | undefined> = ref();
 const isCollapsed = ref(false);
 const search = ref("");
 const selectId = ref(-1)
-
+const map = ref()
 
 const items: Ref<{
   id: number,
@@ -186,7 +185,7 @@ const filteredAndPagination = (_search = "") => {
 
 onMounted(() => {
   uuid.value = crypto.randomUUID()
-  console.log(uuid.value)
+  console.log(map.value)
 })
 watch(selectId, async (newVal) => {
   const _item = items.value.find(e => e.id === selectId.value)

@@ -21,6 +21,13 @@
             height: 100%;
         }
 
+        .marker {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            cursor: pointer;
+        }
+
         .departament {
             cursor: pointer;
         }
@@ -30,124 +37,179 @@
 <body>
     <div id="map"></div>
 
-
-
-
     <script>
-        let deportamentID = 1;
-        const baseURL = "http://localhost:5001"
-
         mapboxgl.accessToken = 'pk.eyJ1Ijoic3ZjLW9rdGEtbWFwYm94LXN0YWZmLWFjY2VzcyIsImEiOiJjbG5sMnExa3kxNTJtMmtsODJld24yNGJlIn0.RQ4CHchAYPJQZSiUJ0O3VQ';
+        const BASE_URL = "http://localhost:5001";
+        const MARKER_COLOR = '#8A2BE2';
+        const MARKER_SIZE = '20px';
+        const INITIAL_CENTER = [73.423043, 61.258726];
+        const INITIAL_ZOOM = 12;
+        const MAP_STYLE = 'mapbox://styles/mapbox/standard';
+
+        let infrastructureID = null;
+        let departamentID = -1;
+        let markers = [];
+        let departaments = [];
+        let radius = 1000;
+
         const map = new mapboxgl.Map({
             container: 'map',
-            center: [73.423043, 61.258726],
-            zoom: 12,
-            style: 'mapbox://styles/mapbox/standard',
+            center: INITIAL_CENTER,
+            zoom: INITIAL_ZOOM,
+            style: MAP_STYLE,
             hash: true,
         });
 
-        const setMarkerColor = (marker, color) => {
-            let markerElement = marker.getElement();
-            markerElement
-                .querySelectorAll('svg g[fill="' + marker._color + '"]')[0]
-                .setAttribute("fill", color);
-            marker._color = color;
-        }
-        async function fetchAndDisplayMarkers() {
+        const createMarker = (coords, color, className, popupText, onClick) => {
+            const el = document.createElement('div');
+            el.className = `marker ${className}`;
+            el.style.backgroundColor = color;
+            el.style.width = MARKER_SIZE;
+            el.style.height = MARKER_SIZE;
+
+            const marker = new mapboxgl.Marker(el)
+                .setLngLat(coords)
+                .addTo(map);
+
+            if (popupText) {
+                const popup = new mapboxgl.Popup({ offset: 25 }).setText(popupText);
+                marker.setPopup(popup);
+            }
+
+            if (onClick) {
+                el.addEventListener('click', onClick);
+            }
+
+            return marker;
+        };
+
+        const fetchInfrastructure = async () => {
+            const url = new URL(`${BASE_URL}/api/v1/infrastructure/radius`);
+            url.searchParams.set("developmentId", departamentID);
+            url.searchParams.set("radius", radius);
+
             try {
-                // Получаем границы видимой области
-                const bounds = map.getBounds();
-                const sw = bounds.getSouthWest(); // Юго-западный угол
-                const ne = bounds.getNorthEast(); // Северо-восточный угол
-
-                // Формируем URL для запроса
-                const url = new URL(baseURL + '/api/v1/development/search/board');
-                url.searchParams.set('topLeftLon', ne.lng); // Долгота северо-восточного угла
-                url.searchParams.set('topLeftLat', ne.lat); // Широта северо-восточного угла
-                url.searchParams.set('bottomRightLon', sw.lng); // Долгота юго-западного угла
-                url.searchParams.set('bottomRightLat', sw.lat); // Широта юго-западного угла
-
-                // Выполняем запрос
                 const response = await fetch(url);
-                if (!response.ok) {
-                    throw new Error('Ошибка сети');
-                }
+                if (!response.ok) throw new Error('Ошибка сети');
                 const data = await response.json();
 
-                // Очищаем предыдущие маркеры (если есть)
-                if (window.markers) {
-                    window.markers.forEach(marker => marker.remove());
+                data.forEach(element => {
+                    createMarker([element.coords.lon, element.coords.lat], 'blue', `development_${departamentID}_marker_${element.id}`, '', () => {
+                        console.log(departamentID, element.id)
+                    });
+                });
+                await fetchAndDisplayMarkers()
+            } catch (error) {
+                console.error('Ошибка при загрузке инфраструктуры:', error);
+            }
+        };
+
+        const lastCoords = [0, 0, 0, 0];
+
+        const fetchAndDisplayMarkers = async () => {
+            try {
+                const bounds = map.getBounds();
+                const sw = bounds.getSouthWest();
+                const ne = bounds.getNorthEast();
+                if (
+                    ne.lng !== lastCoords[0] &&
+                    ne.lat !== lastCoords[1] &&
+                    sw.lng !== lastCoords[2] &&
+                    sw.lat !== lastCoords[3]
+                ) {
+                    lastCoords[0] = ne.lng
+                    lastCoords[1] = ne.lat
+                    lastCoords[2] = sw.lng
+                    lastCoords[3] = sw.lat
+                } else {
+                    return;
                 }
-                window.markers = [];
+                console.log(ne.lng === lastCoords[0] &&
+                    ne.lat === lastCoords[1] &&
+                    sw.lng === lastCoords[2] &&
+                    sw.lat === lastCoords[3])
+                const url = new URL(`${BASE_URL}/api/v1/development/search/board`);
+                url.searchParams.set('topLeftLon', ne.lng);
+                url.searchParams.set('topLeftLat', ne.lat);
+                url.searchParams.set('bottomRightLon', sw.lng);
+                url.searchParams.set('bottomRightLat', sw.lat);
+
+                const response = await fetch(url);
+                if (!response.ok) throw new Error('Ошибка сети');
+                const data = await response.json();
+                departaments = data;
+
+                markers.forEach(marker => marker.remove());
+                markers = [];
 
                 data.forEach(item => {
                     const { lon, lat } = item.coords;
-                    const name = item.name;
-                    const id = item.id;
-                    const el = document.createElement('div');
-                    el.className = 'marker';
-                    el.style.backgroundColor = '#8A2BE2';
-                    el.style.width = '20px';
-                    el.style.height = '20px';
-                    el.style.borderRadius = '50%';
-                    el.style.cursor = 'pointer';
-                    const marker = new mapboxgl.Marker({
-                        color: "black",
-                        className: 'departament'
-                    }).setLngLat([lon, lat])
-                        .addTo(map);
-                    const popup = new mapboxgl.Popup({ offset: 25 }).setText(name);
-                    popup.on('open', () => {
-                        deportamentID = id;
-                    });
-                    marker.setPopup(popup);
+                    const { name, id } = item;
 
-                    window.markers.push(marker);
+                    const marker = createMarker(
+                        [lon, lat],
+                        departamentID === id ? "red" : MARKER_COLOR,
+                        'departament',
+                        name,
+                        () => {
+                            departamentID = id;
+                            fetchInfrastructure().catch(e => console.error("Ошибка:", e));
+                        }
+                    );
+
+                    markers.push(marker);
                 });
-
 
             } catch (error) {
                 console.error('Ошибка:', error);
             }
-        }
-        map.on('idle', () => {
-            fetchAndDisplayMarkers()
-        });
+        };
 
+        const throttle = (func, interval) => {
+            let lastExecuted = 0;
+            let timeoutId = null;
 
-        function getQueryParam(param) {
+            return function (...args) {
+                const now = Date.now();
+                const timeSinceLastExecution = now - lastExecuted;
+
+                if (timeSinceLastExecution >= interval) {
+                    lastExecuted = now;
+                    func.apply(this, args);
+                } else {
+                    clearTimeout(timeoutId);
+                    timeoutId = setTimeout(() => {
+                        lastExecuted = Date.now();
+                        func.apply(this, args);
+                    }, interval - timeSinceLastExecution);
+                }
+            };
+        };
+
+        map.on('idle', throttle(fetchAndDisplayMarkers, 200));
+
+        const getQueryParam = (param) => {
             const urlParams = new URLSearchParams(window.location.search);
             return urlParams.get(param);
-        }
+        };
+
         Pusher.logToConsole = true;
+        const pusher = new Pusher('c944918e9a9c0f6f3553', { cluster: 'eu' });
+        let channel = null;
 
-        var pusher = new Pusher('c944918e9a9c0f6f3553', {
-            cluster: 'eu'
-        });
-
-        var channel = null;
-
-        window.onload = function () {
+        window.onload = () => {
             const id = getQueryParam('id');
-            console.log(id)
             if (id) {
-                channel = pusher.subscribe('map-' + id)
-                channel.bind('change-marker', async function (data) {
-                    console.log(data)
-                    marker.setLngLat([data.lan, data.lat])
-
+                channel = pusher.subscribe(`map-${id}`);
+                channel.bind('change-marker', async (data) => {
                     map.flyTo({
                         center: [data.lan, data.lat],
                         zoom: 15,
                         speed: 0.1,
-
                         duration: 2000,
                     });
-
                     fetchAndDisplayMarkers();
                 });
-
-
             }
         };
     </script>
